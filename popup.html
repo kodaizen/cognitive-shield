@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>Cognitive Shield</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <img src="icons/icon32.png" alt="" width="26" height="26" />
+      <strong>Cognitive Shield</strong>
+      <label class="switch" title="Activer / désactiver">
+        <input type="checkbox" id="enabled" />
+        <span class="sr">Activer</span>
+      </label>
+    </header>
+
+    <p id="summary" class="summary">—</p>
+
+    <div class="stats">
+      <div><span>Scannées</span><b id="s-scanned">–</b></div>
+      <div><span>Analysées</span><b id="s-analyzed">–</b></div>
+      <div><span>Masquées</span><b id="s-hidden">–</b></div>
+      <div><span>Gardées</span><b id="s-kept">–</b></div>
+      <div><span>Erreurs</span><b id="s-errors">–</b></div>
+      <div><span>File</span><b id="s-queue">–</b></div>
+    </div>
+    <p id="pageNote" class="note"></p>
+
+    <div class="row">
+      <button id="rescan">Réanalyser</button>
+      <button id="options" class="primary">Réglages</button>
+    </div>
+
+    <h2>Décisions récentes <button id="clear" class="mini">Vider</button></h2>
+    <ul id="recent" class="recent"></ul>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

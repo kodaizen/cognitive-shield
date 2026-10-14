@@ -1,0 +1,76 @@
+/* Cognitive Shield - classes appliquées aux cartes YouTube */
+
+ytd-rich-item-renderer.cognitive-shield-hidden,
+ytd-rich-grid-media.cognitive-shield-hidden {
+  display: none !important;
+}
+
+ytd-rich-item-renderer.cognitive-shield-blurred,
+ytd-rich-grid-media.cognitive-shield-blurred {
+  filter: blur(16px) grayscale(1) brightness(0.7) !important;
+  opacity: 0.35 !important;
+  transition: filter 0.25s ease, opacity 0.25s ease !important;
+}
+
+ytd-rich-item-renderer.cognitive-shield-blurred:hover,
+ytd-rich-grid-media.cognitive-shield-blurred:hover {
+  filter: none !important;
+  opacity: 1 !important;
+}
+
+/* Carte non encore analysée : contenu masqué + spinner, la place est conservée */
+ytd-rich-item-renderer.cognitive-shield-pending,
+ytd-rich-grid-media.cognitive-shield-pending {
+  position: relative !important;
+}
+
+ytd-rich-item-renderer.cognitive-shield-pending > *,
+ytd-rich-grid-media.cognitive-shield-pending > * {
+  visibility: hidden !important;
+}
+
+ytd-rich-item-renderer.cognitive-shield-pending::after,
+ytd-rich-grid-media.cognitive-shield-pending::after {
+  content: "" !important;
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  width: 30px !important;
+  height: 30px !important;
+  margin: -15px 0 0 -15px !important;
+  border: 3px solid rgba(128, 128, 128, 0.35) !important;
+  border-top-color: #4f46e5 !important;
+  border-radius: 50% !important;
+  visibility: visible !important;
+  z-index: 6 !important;
+  animation: cognitive-shield-spin 0.8s linear infinite !important;
+  pointer-events: none !important;
+}
+
+@keyframes cognitive-shield-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+ytd-rich-item-renderer.cognitive-shield-marked,
+ytd-rich-grid-media.cognitive-shield-marked {
+  position: relative !important;
+  outline: 2px solid #ef4444 !important;
+  border-radius: 12px !important;
+}
+
+.cognitive-shield-badge {
+  position: absolute !important;
+  top: 8px !important;
+  left: 8px !important;
+  z-index: 10 !important;
+  background: #ef4444 !important;
+  color: #fff !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif !important;
+  padding: 3px 8px !important;
+  border-radius: 999px !important;
+  pointer-events: none !important;
+}

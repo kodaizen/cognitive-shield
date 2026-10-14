@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cognitive Shield — Réglages</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <header>
+      <img src="icons/icon48.png" alt="" width="40" height="40" />
+      <div>
+        <h1>Cognitive Shield</h1>
+        <p class="sub">Filtre local des suggestions YouTube avec <code>clef-flash</code> (Ollama).</p>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="enabled" />
+        <span>Activer</span>
+      </label>
+    </header>
+
+    <main>
+      <section>
+        <h2>Connexion au modèle</h2>
+        <div class="row">
+          <label class="field grow">
+            <span>Backend Ollama (URL)</span>
+            <input type="url" id="endpoint" placeholder="http://localhost:11434" />
+          </label>
+          <label class="field">
+            <span>Modèle</span>
+            <input type="text" id="model" placeholder="clef-flash" />
+          </label>
+        </div>
+        <p class="hint">
+          Indique l'URL de base de ton serveur Ollama (ex. <code>http://localhost:11434</code>) :
+          l'extension ajoute <code>/v1/systemone</code> automatiquement. Un endpoint complet
+          (<code>http://localhost:11434/v1/systemone</code>) est aussi accepté.
+          Prérequis : <code>ollama pull clef-flash</code> (Ollama ≥ 0.35.1, ~11 Go).
+          Si Ollama répond <code>403</code>, l'extension retire automatiquement l'en-tête
+          <code>Origin</code> ; tu peux aussi lancer
+          <code>OLLAMA_ORIGINS='chrome-extension://*' ollama serve</code>.
+        </p>
+      </section>
+
+      <section>
+        <h2>Prompt de filtrage</h2>
+        <label class="field">
+          <span>Question posée au modèle (type <code>noul</code>, réponse oui/non)</span>
+          <textarea id="prompt" rows="3"></textarea>
+        </label>
+        <div class="row">
+          <label class="field grow">
+            <span>Description de « vrai » (à garder)</span>
+            <textarea id="criteriaTrue" rows="2"></textarea>
+          </label>
+          <label class="field grow">
+            <span>Description de « faux » (à filtrer)</span>
+            <textarea id="criteriaFalse" rows="2"></textarea>
+          </label>
+        </div>
+        <div class="row">
+          <label class="field">
+            <span>Seuil de conservation : <b id="thresholdOut">0.50</b></span>
+            <input type="range" id="threshold" min="0" max="1" step="0.01" />
+          </label>
+          <label class="field">
+            <span>Action sur les vidéos filtrées</span>
+            <select id="action">
+              <option value="hide">Masquer complètement</option>
+              <option value="blur">Flouter (révélable au survol)</option>
+              <option value="mark">Marquer d'un badge rouge</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section>
+        <h2>Données envoyées au modèle</h2>
+        <div class="checks">
+          <label><input type="checkbox" id="useThumbnails" /> Analyser la miniature (image)</label>
+          <label><input type="checkbox" id="includeMeta" /> Durée, vues, date de publication</label>
+          <label><input type="checkbox" id="includeBadges" /> Badges (4K, Nouveau, En direct…)</label>
+          <label><input type="checkbox" id="includeDescription" /> Extrait de description</label>
+        </div>
+      </section>
+
+      <section>
+        <h2>Performance</h2>
+        <div class="row">
+          <label class="field">
+            <span>Requêtes simultanées</span>
+            <input type="number" id="concurrency" min="1" max="10" step="1" />
+          </label>
+          <label class="field">
+            <span>Délai max (ms)</span>
+            <input type="number" id="timeoutMs" min="1000" max="120000" step="1000" />
+          </label>
+        </div>
+      </section>
+
+      <div class="actions">
+        <button id="save" class="primary">Enregistrer</button>
+        <button id="test">Tester la connexion</button>
+        <button id="reset">Réinitialiser</button>
+        <span id="status" class="status"></span>
+      </div>
+
+      <section id="testBox" class="test hidden">
+        <h2>Résultat du test</h2>
+        <pre id="testOut"></pre>
+      </section>
+    </main>
+
+    <script src="options.js"></script>
+  </body>
+</html>
