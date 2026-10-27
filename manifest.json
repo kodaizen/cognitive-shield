@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Cognitive Shield",
   "version": "1.0.0",
-  "description": "Filtre les suggestions YouTube avec un modèle local clef-flash (Ollama) selon votre propre prompt.",
+  "description": "Filtre les suggestions YouTube avec un modèle de décision Cloudflare Clef (Workers AI) ou Ollama en local, selon votre propre prompt.",
   "permissions": [
     "storage",
     "declarativeNetRequestWithHostAccess"
@@ -10,8 +10,11 @@
   "host_permissions": [
     "https://www.youtube.com/*",
     "https://i.ytimg.com/*",
+    "https://api.cloudflare.com/*",
     "http://localhost:11434/*",
-    "http://127.0.0.1:11434/*"
+    "http://127.0.0.1:11434/*",
+    "http://localhost:52625/*",
+    "http://127.0.0.1:52625/*"
   ],
   "optional_host_permissions": [
     "http://*/*",

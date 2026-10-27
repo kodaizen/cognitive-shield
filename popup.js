@@ -61,8 +61,11 @@ async function loadSummary() {
   $("enabled").checked = !!s.enabled;
   const action =
     s.action === "blur" ? "floutées" : s.action === "mark" ? "marquées" : "masquées";
+  const isOllama = s.provider === "ollama";
+  const model = isOllama ? s.ollamaModel : s.cloudflareModel;
+  const providerLabel = isOllama ? "Ollama" : "Cloudflare";
   $("summary").textContent =
-    `${s.model} · ${s.endpoint}\nseuil ${Number(s.threshold).toFixed(2)} · filtrées ${action}`;
+    `${model} · ${providerLabel}\nseuil ${Number(s.threshold).toFixed(2)} · filtrées ${action}`;
   return s;
 }
 

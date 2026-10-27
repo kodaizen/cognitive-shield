@@ -1,6 +1,6 @@
 // Cognitive Shield - content script
 // Scanne les suggestions de la page d'accueil YouTube, extrait un maximum
-// d'informations, les envoie à clef-flash via le service worker, puis filtre.
+// d'informations, les envoie au modèle Cloudflare Clef via le service worker, puis filtre.
 // Les infos et boutons sont dans la popup de la barre d'outils.
 
 (() => {

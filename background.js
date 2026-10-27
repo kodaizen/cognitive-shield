@@ -1,11 +1,22 @@
 // Cognitive Shield - service worker
-// Centralise les appels à clef-flash (Ollama System One) pour éviter les
-// restrictions CSP de la page YouTube, et met en cache miniatures + décisions.
+// Centralise les appels au modèle de décision — Cloudflare Workers AI (cloud) ou
+// Ollama (local) — pour éviter les restrictions CSP de la page YouTube, et met en
+// cache miniatures + décisions.
 
 const DEFAULT_SETTINGS = {
   enabled: true,
-  endpoint: "http://localhost:11434/v1/systemone",
-  model: "clef-flash",
+  provider: "cloudflare", // cloudflare | ollama | fastflowlm
+  // Cloudflare Workers AI
+  cloudflareAccountId: "",
+  cloudflareApiToken: "",
+  cloudflareModel: "@cf/cloudflare/clef-flash",
+  // Ollama (local)
+  ollamaEndpoint: "http://localhost:11434",
+  ollamaModel: "clef-flash",
+  // FastFlowLM (local, modèle de décision d3 — non génératif)
+  fastflowlmEndpoint: "http://localhost:52625",
+  fastflowlmModel: "d3:nano",
+  // Filtrage
   prompt:
     "Cette vidéo est-elle une suggestion réellement utile, pertinente et de qualité qui correspond à ce que je veux regarder maintenant ? Réponds vrai uniquement si c'est clairement le cas.",
   criteriaTrue:
@@ -22,13 +33,78 @@ const DEFAULT_SETTINGS = {
   includeDescription: true
 };
 
+// API REST Cloudflare Workers AI : POST /accounts/{account_id}/ai/run/{model}
+const CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4/accounts";
+
 const thumbCache = new Map();
 const recent = [];
 const MAX_RECENT = 50;
 
+function activeProvider(settings) {
+  if (settings.provider === "fastflowlm") return "fastflowlm";
+  return settings.provider === "ollama" ? "ollama" : "cloudflare";
+}
+
+// Endpoint de base d'un serveur System One local (Ollama ou FastFlowLM).
+function localEndpoint(settings) {
+  return activeProvider(settings) === "fastflowlm"
+    ? (settings.fastflowlmEndpoint || DEFAULT_SETTINGS.fastflowlmEndpoint)
+    : (settings.ollamaEndpoint || DEFAULT_SETTINGS.ollamaEndpoint);
+}
+
+// Un modèle Workers AI s'identifie par "@cf/<auteur>/<modele>". On tolère la forme
+// courte ("clef-flash", héritée d'Ollama) en préfixant la namespace Cloudflare.
+function normalizeModel(model) {
+  const m = (model || "").trim();
+  if (!m) return DEFAULT_SETTINGS.cloudflareModel;
+  if (m.includes("/")) return m;
+  return "@cf/cloudflare/" + m;
+}
+
+// Le corps de requête Clef attend le sélecteur court ("clef-flash"),
+// pas l'identifiant complet ("@cf/cloudflare/clef-flash").
+function modelSelector(model) {
+  return normalizeModel(model).split("/").filter(Boolean).pop();
+}
+
+function buildCloudflareEndpoint(accountId, model) {
+  const account = (accountId || "").trim();
+  if (!account) throw new Error("Account ID Cloudflare manquant (réglages).");
+  return CLOUDFLARE_API_BASE + "/" + encodeURIComponent(account) + "/ai/run/" + normalizeModel(model);
+}
+
+// L'utilisateur peut saisir la base d'un serveur local (http://localhost:11434 ou
+// http://localhost:52625) ou l'endpoint complet (…/v1/systemone) : on ajoute
+// /v1/systemone si le chemin est vide.
+function resolveSystemOneEndpoint(raw) {
+  const value = (raw || "").trim() || DEFAULT_SETTINGS.ollamaEndpoint;
+  try {
+    const url = new URL(value);
+    const path = url.pathname.replace(/\/+$/, "");
+    url.pathname = path === "" ? "/v1/systemone" : path;
+    return url.toString();
+  } catch (_) {
+    return value;
+  }
+}
+
 async function getSettings() {
-  const stored = await chrome.storage.sync.get(DEFAULT_SETTINGS);
-  return { ...DEFAULT_SETTINGS, ...stored };
+  const stored = await chrome.storage.sync.get(null);
+  const s = { ...DEFAULT_SETTINGS, ...stored };
+  // Migration depuis les anciens schémas à plat (Ollama seul, puis Cloudflare seul).
+  if (!stored.cloudflareAccountId && stored.accountId) s.cloudflareAccountId = stored.accountId;
+  if (!stored.cloudflareApiToken && stored.apiToken) s.cloudflareApiToken = stored.apiToken;
+  if (!stored.cloudflareModel && stored.model) s.cloudflareModel = stored.model;
+  if (!stored.ollamaModel && stored.model && !String(stored.model).includes("/")) {
+    s.ollamaModel = stored.model;
+  }
+  s.provider = activeProvider(s);
+  s.cloudflareModel = normalizeModel(s.cloudflareModel);
+  s.ollamaModel = (s.ollamaModel || "").trim() || DEFAULT_SETTINGS.ollamaModel;
+  s.ollamaEndpoint = (s.ollamaEndpoint || "").trim() || DEFAULT_SETTINGS.ollamaEndpoint;
+  s.fastflowlmModel = (s.fastflowlmModel || "").trim() || DEFAULT_SETTINGS.fastflowlmModel;
+  s.fastflowlmEndpoint = (s.fastflowlmEndpoint || "").trim() || DEFAULT_SETTINGS.fastflowlmEndpoint;
+  return s;
 }
 
 function buildState(video, settings) {
@@ -72,8 +148,8 @@ async function fetchThumbBase64(url) {
     if (!res.ok) throw new Error("HTTP " + res.status);
     const buf = await res.arrayBuffer();
     const bytes = new Uint8Array(buf);
-    // On n'accepte que JPEG/PNG/WebP : clef-flash rejette tout le reste
-    // ("invalid decision image") — data:, SVG, placeholders, etc.
+    // On n'accepte que JPEG/PNG/WebP : Clef rejette tout le reste
+    // ("invalid image") — data:, SVG, placeholders, etc.
     if (!sniffImage(bytes)) throw new Error("format d'image non supporté");
     let bin = "";
     const chunk = 0x8000;
@@ -90,25 +166,17 @@ async function fetchThumbBase64(url) {
   }
 }
 
-function resolveEndpoint(raw) {
-  const value = (raw || "").trim();
-  if (!value) return DEFAULT_SETTINGS.endpoint;
+// Un serveur System One local (Ollama, FastFlowLM) refuse (403) toute requête
+// portant un Origin non autorisé. Les requêtes émises par une extension ont un
+// Origin chrome-extension://..., donc on remplace Origin/Referer vers le backend
+// local via une règle declarativeNetRequest.
+async function syncOriginRule(provider, localEndpointRaw) {
   try {
-    const url = new URL(value);
-    const path = url.pathname.replace(/\/+$/, "");
-    url.pathname = path === "" ? "/v1/systemone" : path;
-    return url.toString();
-  } catch (_) {
-    return value;
-  }
-}
-
-// Ollama refuse (403) toute requête portant un Origin non autorisé. Les requêtes
-// émises par une extension ont un Origin chrome-extension://..., donc on retire
-// Origin/Referer vers le backend via une règle declarativeNetRequest dynamique.
-async function syncOriginRule(endpoint) {
-  try {
-    const url = new URL(resolveEndpoint(endpoint));
+    if (provider === "cloudflare") {
+      await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [1] });
+      return;
+    }
+    const url = new URL(resolveSystemOneEndpoint(localEndpointRaw));
     const rule = {
       id: 1,
       priority: 1,
@@ -133,37 +201,84 @@ async function syncOriginRule(endpoint) {
 async function initOriginRule() {
   try {
     const s = await getSettings();
-    await syncOriginRule(s.endpoint);
+    await syncOriginRule(activeProvider(s), localEndpoint(s));
   } catch (_) {}
 }
 
-async function postDecision(endpoint, body, signal) {
+function extractError(data, status, rawText) {
+  if (data && Array.isArray(data.errors) && data.errors.length) {
+    const msgs = data.errors
+      .map((e) => (typeof e === "string" ? e : (e && (e.message || e.code)) || ""))
+      .filter(Boolean);
+    if (msgs.length) return msgs.join("; ");
+  }
+  if (data && Array.isArray(data.messages) && data.messages.length) {
+    const msgs = data.messages.filter((m) => typeof m === "string" && m);
+    if (msgs.length) return msgs.join("; ");
+  }
+  if (data && typeof data.error === "string" && data.error) return data.error;
+  if (rawText) return String(rawText).slice(0, 200);
+  return "HTTP " + status;
+}
+
+async function postDecision(endpoint, token, body, signal) {
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = "Bearer " + token;
+
   const res = await fetch(endpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
     signal
   });
-  if (!res.ok) {
-    let detail = "";
+
+  let text = "";
+  try {
+    text = await res.text();
+  } catch (_) {}
+  let data = null;
+  if (text) {
     try {
-      detail = await res.text();
-    } catch (_) {}
-    const err = new Error("HTTP " + res.status + (detail ? " - " + detail.slice(0, 200) : ""));
+      data = JSON.parse(text);
+    } catch (_) {
+      data = null;
+    }
+  }
+
+  if (!res.ok || (data && data.success === false)) {
+    const detail = extractError(data, res.status, text);
+    const err = new Error("HTTP " + res.status + (detail ? " - " + detail : ""));
     err.detail = detail;
+    err.status = res.status;
     throw err;
   }
-  return res.json();
+  return data;
 }
 
 async function classify(video, settings) {
-  const endpoint = resolveEndpoint(settings.endpoint);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), settings.timeoutMs || 30000);
   const started = Date.now();
   try {
+    const provider = activeProvider(settings);
+    let endpoint;
+    let token = "";
+    let model;
+
+    if (provider === "ollama" || provider === "fastflowlm") {
+      // Les deux serveurs locaux parlent le même protocole System One.
+      model = ((provider === "fastflowlm" ? settings.fastflowlmModel : settings.ollamaModel) || "").trim();
+      if (!model) throw new Error("Modèle local manquant (réglages).");
+      endpoint = resolveSystemOneEndpoint(localEndpoint(settings));
+    } else {
+      token = (settings.cloudflareApiToken || "").trim();
+      if (!token) throw new Error("Jeton API Cloudflare manquant (réglages).");
+      model = modelSelector(settings.cloudflareModel);
+      endpoint = buildCloudflareEndpoint(settings.cloudflareAccountId, settings.cloudflareModel);
+    }
+
     const body = {
-      model: settings.model,
+      model,
       state: buildState(video, settings),
       questions: {
         keep: {
@@ -187,20 +302,25 @@ async function classify(video, settings) {
     try {
       data = await postDecision(
         endpoint,
+        token,
         images.length ? { ...body, images } : body,
         controller.signal
       );
     } catch (e) {
-      // Repli : le modèle rejette l'image ("invalid decision image") → on réessaie sans.
+      // Repli : le modèle rejette l'image ("invalid image") → on réessaie sans.
       const detail = (e && e.detail) || (e && e.message) || "";
       if (images.length && /image|vision|multimodal/i.test(detail)) {
-        data = await postDecision(endpoint, body, controller.signal);
+        data = await postDecision(endpoint, token, body, controller.signal);
       } else {
         throw e;
       }
     }
 
-    const answer = data && data.answers && data.answers.keep;
+    // Cloudflare encapsule la réponse dans { result, success, errors } ;
+    // Ollama renvoie directement { model, answers, usage }.
+    const payload =
+      data && data.result && typeof data.result === "object" ? data.result : data;
+    const answer = payload && payload.answers && payload.answers.keep;
     const probability = answer && typeof answer.noul === "number" ? answer.noul : null;
     if (probability === null) {
       throw new Error("Réponse inattendue du modèle");
@@ -246,7 +366,7 @@ async function testConnection(settings) {
     views: "1.2M views",
     published: "2 years ago",
     badges: ["HD"],
-    description: "A short sample used only to verify the local model answers."
+    description: "A short sample used only to verify the decision model answers."
   };
   return classify(sample, settings);
 }
@@ -257,8 +377,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       switch (msg && msg.type) {
         case "classify": {
           const settings = msg.settings || (await getSettings());
-          await syncOriginRule(settings.endpoint);
-          const result = await classify(msg.video, settings);
+          await syncOriginRule(activeProvider(settings), localEndpoint(settings));
           sendResponse(result);
           break;
         }
@@ -274,7 +393,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           break;
         case "test": {
           const settings = { ...(await getSettings()), ...(msg.settings || {}) };
-          await syncOriginRule(settings.endpoint);
+          settings.provider = activeProvider(settings);
+          await syncOriginRule(settings.provider, localEndpoint(settings));
           const result = await testConnection(settings);
           sendResponse(result);
           break;
@@ -290,9 +410,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.sync.get(DEFAULT_SETTINGS).then((s) => {
+  chrome.storage.sync.get(null).then((stored) => {
+    const s = { ...DEFAULT_SETTINGS, ...stored };
+    if (!stored.cloudflareModel && stored.model) s.cloudflareModel = stored.model;
     chrome.storage.sync.set(s);
-    syncOriginRule(s.endpoint);
   });
 });
 
@@ -300,7 +421,8 @@ chrome.runtime.onStartup.addListener(initOriginRule);
 initOriginRule();
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "sync" && changes.endpoint) {
-    syncOriginRule(changes.endpoint.newValue);
+  if (area !== "sync") return;
+  if (changes.provider || changes.ollamaEndpoint || changes.fastflowlmEndpoint) {
+    getSettings().then((s) => syncOriginRule(activeProvider(s), localEndpoint(s)));
   }
 });
