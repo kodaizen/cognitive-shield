@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Cognitive Shield",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Filtre les suggestions YouTube avec un modèle de décision Cloudflare Clef (Workers AI) ou Ollama en local, selon votre propre prompt.",
   "permissions": [
     "storage",

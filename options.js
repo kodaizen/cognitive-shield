@@ -33,8 +33,17 @@ function syncProviderUI() {
 
 function fillForm(s) {
   $("enabled").checked = !!s.enabled;
-  $("provider").value = s.provider === "ollama" ? "ollama" : "cloudflare";
+  $("provider").value = ["cloudflare", "ollama", "fastflowlm"].includes(s.provider) ? s.provider : "cloudflare";
   for (const f of CLOUDFLARE_FIELDS) $(f).value = s[f] != null ? s[f] : "";
+  // Les modèles sont des <select> : si une valeur personnalisée était enregistrée,
+  // on la réinjecte comme option pour ne pas la perdre.
+  for (const f of ["ollamaModel", "fastflowlmModel"]) {
+    const sel = $(f);
+    if (s[f] && ![...sel.options].some((o) => o.value === s[f])) {
+      const opt = new Option(s[f] + " (modèle personnalisé)", s[f]);
+      sel.add(opt);
+    }
+  }
   for (const f of OLLAMA_FIELDS) $(f).value = s[f] != null ? s[f] : "";
   for (const f of FASTFLOWLM_FIELDS) $(f).value = s[f] != null ? s[f] : "";
   for (const f of SHARED_FIELDS) $(f).value = s[f] != null ? s[f] : "";
@@ -200,6 +209,11 @@ async function init() {
   await loadDefaults();
   const s = await chrome.runtime.sendMessage({ type: "getSettings" });
   fillForm(s);
+
+  // Affiche la version chargée par Brave → permet de vérifier qu'on n'est pas
+  // sur une copie périmée de l'extension.
+  const mv = chrome.runtime.getManifest();
+  $("extVersion").textContent = "Version installée : " + (mv ? mv.version : "?");
 
   $("threshold").addEventListener("input", () => {
     $("thresholdOut").textContent = parseFloat($("threshold").value).toFixed(2);

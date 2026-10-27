@@ -11,7 +11,8 @@
       <img src="icons/icon48.png" alt="" width="40" height="40" />
       <div>
         <h1>Cognitive Shield</h1>
-        <p class="sub">Filtre des suggestions YouTube avec un modèle de décision Clef (Cloudflare Workers AI) ou Ollama en local.</p>
+        <p class="sub">Filtre des suggestions YouTube avec un modèle de décision Clef (Cloudflare Workers AI), Ollama ou FastFlowLM en local.</p>
+        <p class="sub" id="extVersion"></p>
       </div>
       <label class="switch">
         <input type="checkbox" id="enabled" />
@@ -68,21 +69,33 @@
 
       <section id="ollamaSection">
         <h2>Ollama (local)</h2>
-        <div class="row">
+          <div class="row">
           <label class="field grow">
             <span>Backend Ollama (URL)</span>
             <input type="url" id="ollamaEndpoint" placeholder="http://localhost:11434" />
           </label>
           <label class="field grow">
             <span>Modèle</span>
-            <input type="text" id="ollamaModel" placeholder="clef-flash" />
+            <select id="ollamaModel">
+              <option value="clef-flash">clef-flash — 9B, le plus rapide</option>
+              <option value="clef">clef — 27B, plus précis (~11 Go)</option>
+              <option value="d3:2b">d3:2b — 2B décision, le plus rapide (~3,1 Go)</option>
+              <option value="d3:4b">d3:4b — 4B décision, équilibre (~5,6 Go)</option>
+              <option value="d3:9b">d3:9b — 9B décision, plus précis (~10 Go)</option>
+              <option value="d3:27b">d3:27b — 27B décision, le plus précis (~29 Go)</option>
+            </select>
           </label>
         </div>
         <p class="hint">
           Indique l'URL de base de ton serveur Ollama (ex. <code>http://localhost:11434</code>) :
           l'extension ajoute <code>/v1/systemone</code> automatiquement. Un endpoint complet
           (<code>http://localhost:11434/v1/systemone</code>) est aussi accepté.
-          Prérequis : <code>ollama pull clef-flash</code> (Ollama ≥ 0.35.1, ~11 Go).
+          Prérequis : <code>ollama pull <modele></code> — <code>clef-flash</code>
+          (Ollama ≥ 0.35.1, ~11 Go) ou un modèle de décision <b>d3</b>
+          (<code>d3:2b</code> ~3,1 Go, <code>d3:4b</code> ~5,6 Go, <code>d3:9b</code> ~10 Go,
+          <code>d3:27b</code> ~29 Go ; Ollama ≥ 0.40.9, contexte 256K, texte et images).
+          Plus d'infos :
+          <a href="https://ollama.com/library/d3" target="_blank" rel="noopener noreferrer">Bibliothèque Ollama d3</a>.
           Si Ollama répond <code>403</code>, l'extension retire automatiquement l'en-tête
           <code>Origin</code> ; tu peux aussi lancer
           <code>OLLAMA_ORIGINS='chrome-extension://*' ollama serve</code>.
@@ -91,25 +104,32 @@
 
       <section id="fastflowlmSection" class="hidden">
         <h2>FastFlowLM (local)</h2>
-        <div class="row">
+          <div class="row">
           <label class="field grow">
             <span>Backend FastFlowLM (URL)</span>
             <input type="url" id="fastflowlmEndpoint" placeholder="http://localhost:52625" />
           </label>
           <label class="field grow">
             <span>Modèle de décision</span>
-            <input type="text" id="fastflowlmModel" placeholder="d3:nano" />
+            <select id="fastflowlmModel">
+              <option value="d3:lite">d3:lite — 0.8B, le plus rapide (~0,8 Go)</option>
+              <option value="d3:nano">d3:nano — 2B, précis (~2 Go)</option>
+              <option value="d3:mini">d3:mini — 4B (~3,4 Go)</option>
+              <option value="d3:turbo">d3:turbo — 27B, le plus précis (~16,6 Go, 28 Go RAM, vidéo supportée)</option>
+            </select>
           </label>
         </div>
         <p class="hint">
           FastFlowLM sert un modèle de décision <b>d3</b> sur le NPU AMD (non génératif :
           probabilités directes, très rapide). Lance le serveur avec
-          <code>flm serve --decision d3:nano</code> (port par défaut 52625) ; l'extension
+          <code>flm serve --decision d3:lite</code> (port par défaut 52625) ; l'extension
           ajoute <code>/v1/systemone</code> automatiquement. Un endpoint complet
           (<code>http://localhost:52625/v1/systemone</code>) est aussi accepté.
-          Prérequis : <code>flm pull d3:nano</code> (~&#8239;2 Go, Q4_K, max 32 768 tokens d'entrée,
-          images acceptées). Alternatives plus ou moins rapides : <code>d3:lite</code>
-          (~&#8239;0,8 Go) et <code>d3:mini</code>. Plus
+          Prérequis : <code>flm pull d3:lite</code> (~&#8239;0,8 Go, Q4_K, max 32 768 tokens d'entrée,
+          images acceptées, une décision courte ≈ 0,1&#8239;s). Modèles plus précis mais plus
+          lents : <code>d3:nano</code> (~&#8239;2 Go, 2B), <code>d3:mini</code> (~&#8239;3,4 Go, 4B)
+          et <code>d3:turbo</code> (~&#8239;16,6 Go, 27B, vidéo supportée, 28&#8239;Go de RAM requis).
+          Plus
           d'infos :
           <a href="https://fastflowlm.com/docs/models/d3/" target="_blank" rel="noopener noreferrer">Documentation FastFlowLM d3</a>.
         </p>
@@ -124,11 +144,11 @@
         <div class="row">
           <label class="field grow">
             <span>Description de « vrai » (à garder)</span>
-            <textarea id="criteriaTrue" rows="2"></textarea>
+            <textarea id="criteriaTrue" rows="7" placeholder="Ex. : Tutoriels techniques approfondis, conférences…"></textarea>
           </label>
           <label class="field grow">
             <span>Description de « faux » (à filtrer)</span>
-            <textarea id="criteriaFalse" rows="2"></textarea>
+            <textarea id="criteriaFalse" rows="7" placeholder="Ex. : Shorts putaclic, réactions sans apport, contents farms…"></textarea>
           </label>
         </div>
         <div class="row">

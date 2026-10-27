@@ -15,7 +15,7 @@ const DEFAULT_SETTINGS = {
   ollamaModel: "clef-flash",
   // FastFlowLM (local, modèle de décision d3 — non génératif)
   fastflowlmEndpoint: "http://localhost:52625",
-  fastflowlmModel: "d3:nano",
+  fastflowlmModel: "d3:lite",
   // Filtrage
   prompt:
     "Cette vidéo est-elle une suggestion réellement utile, pertinente et de qualité qui correspond à ce que je veux regarder maintenant ? Réponds vrai uniquement si c'est clairement le cas.",
@@ -378,6 +378,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "classify": {
           const settings = msg.settings || (await getSettings());
           await syncOriginRule(activeProvider(settings), localEndpoint(settings));
+          const result = await classify(msg.video, settings);
           sendResponse(result);
           break;
         }
